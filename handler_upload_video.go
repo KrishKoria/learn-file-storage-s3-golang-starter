@@ -93,14 +93,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
         respondWithError(w, http.StatusInternalServerError, "Failed to save uploaded file", err)
         return
     }
-	// Reset the file pointer to the beginning of the file
-	_, err = tempFile.Seek(0, io.SeekStart)
+
+    _, err = tempFile.Seek(0, io.SeekStart)
     if err != nil {
         respondWithError(w, http.StatusInternalServerError, "Failed to process file", err)
         return
     }
 
-    aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+    processedPath, err := processVideoForFastStart(tempFile.Name())
+    if err != nil {
+        respondWithError(w, http.StatusInternalServerError, "Failed to process video for streaming", err)
+        return
+    }
+    defer os.Remove(processedPath)
+
+
+    aspectRatio, err := getVideoAspectRatio(processedPath)
     if err != nil {
         respondWithError(w, http.StatusInternalServerError, "Failed to determine video aspect ratio", err)
         return
@@ -124,13 +132,14 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
     }
 	randomString := base64.RawURLEncoding.EncodeToString(randomBytes)
 	s3Key := fmt.Sprintf("%s%s.mp4",prefix, randomString)
-	
-    _, err = tempFile.Seek(0, io.SeekStart)
+
+    processedFile, err := os.Open(processedPath)
     if err != nil {
-        respondWithError(w, http.StatusInternalServerError, "Failed to process file", err)
+        respondWithError(w, http.StatusInternalServerError, "Failed to open processed file", err)
         return
     }
-    
+    defer processedFile.Close()
+
 	// Upload the video to S3
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
     defer cancel()
@@ -138,7 +147,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	_, err = cfg.s3Client.PutObject(ctx, &s3.PutObjectInput{
         Bucket:      aws.String(cfg.s3Bucket),
         Key:         aws.String(s3Key),
-        Body:        tempFile,
+        Body:        processedFile,
         ContentType: aws.String(mediaType),
     })
 	if err != nil {
