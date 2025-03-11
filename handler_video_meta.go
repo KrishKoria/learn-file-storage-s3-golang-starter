@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"math"
 	"net/http"
+	"os/exec"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
@@ -117,4 +121,52 @@ func (cfg *apiConfig) handlerVideosRetrieve(w http.ResponseWriter, r *http.Reque
 	}
 
 	respondWithJSON(w, http.StatusOK, videos)
+}
+
+
+func getVideoAspectRatio(filePath string) (string, error) {
+    cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
+    
+    var stdout bytes.Buffer
+    cmd.Stdout = &stdout
+    
+    if err := cmd.Run(); err != nil {
+        return "", fmt.Errorf("error running ffprobe: %w", err)
+    }
+    
+    type ffprobeOutput struct {
+        Streams []struct {
+            Width  int `json:"width"`
+            Height int `json:"height"`
+        } `json:"streams"`
+    }
+    
+	var output ffprobeOutput
+    if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+        return "", fmt.Errorf("error parsing ffprobe output: %w", err)
+    }
+    
+    var width, height int
+    for _, stream := range output.Streams {
+        if stream.Width > 0 && stream.Height > 0 {
+            width = stream.Width
+            height = stream.Height
+            break
+        }
+    }
+    
+    if width == 0 || height == 0 {
+        return "", fmt.Errorf("no valid video stream found with width and height")
+    }
+    
+    ratio := float64(width) / float64(height)
+    
+    const tolerance = 0.1
+    if math.Abs(ratio - 16.0/9.0) < tolerance {
+        return "16:9", nil
+    } else if math.Abs(ratio - 9.0/16.0) < tolerance {
+        return "9:16", nil
+    } else {
+        return "other", nil
+    }
 }

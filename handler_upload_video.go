@@ -1,19 +1,20 @@
 package main
 
 import (
-	"net/http"
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
-	"os"
-	"context"
-	"time"
 	"mime"
-	"encoding/base64"
-	"crypto/rand"
+	"net/http"
+	"os"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/google/uuid"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
+	"github.com/google/uuid"
 )
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +100,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
         return
     }
 
+    aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+    if err != nil {
+        respondWithError(w, http.StatusInternalServerError, "Failed to determine video aspect ratio", err)
+        return
+    }
+
+    var prefix string
+    switch aspectRatio {
+    case "16:9":
+        prefix = "landscape/"
+    case "9:16":
+        prefix = "portrait/"
+    default:
+        prefix = "other/"
+    }
+
 	randomBytes := make([]byte, 32)
     _, err = rand.Read(randomBytes)
     if err != nil {
@@ -106,8 +123,14 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
         return
     }
 	randomString := base64.RawURLEncoding.EncodeToString(randomBytes)
-	s3Key := fmt.Sprintf("%s.mp4", randomString)
+	s3Key := fmt.Sprintf("%s%s.mp4",prefix, randomString)
 	
+    _, err = tempFile.Seek(0, io.SeekStart)
+    if err != nil {
+        respondWithError(w, http.StatusInternalServerError, "Failed to process file", err)
+        return
+    }
+    
 	// Upload the video to S3
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
     defer cancel()

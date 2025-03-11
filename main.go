@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
-	"context"
+
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -23,11 +24,6 @@ type apiConfig struct {
 	s3CfDistribution string
 	s3Client 	   *s3.Client
 	port             string
-}
-
-type thumbnail struct {
-	data      []byte
-	mediaType string
 }
 
 
